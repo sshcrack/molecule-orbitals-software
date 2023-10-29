@@ -204,26 +204,28 @@ pub async fn run_generate() -> Result<(String, Box<Path>)> {
     println!("Berechne Molekül mit ID {}...\nDie Datei wird stückweise ausgegeben und anschließend gespeichert.", component_id);
     driver.close_window().await?;
 
-    let mut status_code = StatusCode::FAILED_DEPENDENCY;
+    let mut done = false;
     let mut total_body = String::new();
 
     let client = Client::new();
-    while status_code != StatusCode::OK && status_code != StatusCode::PARTIAL_CONTENT {
+    while !done {
         let mut range = None;
         if !total_body.is_empty() {
-            range = Some(format!("bytes={}-", total_body.as_bytes().len()));
+            range = Some(format!("bytes={}-", total_body.as_bytes().len() -1));
         }
 
         let req = get_req(&client, component_id, range).build()?;
         let res = client.execute(req).await?;
 
-        status_code = res.status();
+
+        let status = res.status();
+        done = res.headers().get("x-processing").is_none();
 
         let text = res.text().await?;
         println!("{}", text);
 
         total_body.push_str(&text);
-        let res: Result<()> = match status_code {
+        let res: Result<()> = match status {
             StatusCode::INTERNAL_SERVER_ERROR => {
                 println!("Internal Server Error. Stopping. ({})", text);
                 bail!("Internal Server Error")
@@ -235,11 +237,16 @@ pub async fn run_generate() -> Result<(String, Box<Path>)> {
             StatusCode::ACCEPTED => Ok(()),
             StatusCode::OK => Ok(()),
             StatusCode::PARTIAL_CONTENT => Ok(()),
-            _ => Err(anyhow!("Unbekannter Status Code: {}", status_code)),
+            StatusCode::RANGE_NOT_SATISFIABLE => {
+                //TODO jank
+                total_body.clear();
+                Ok(())
+            },
+            _ => Err(anyhow!("Unbekannter Status Code: {}", status)),
         };
 
         res?;
-        thread::sleep(Duration::from_millis(250))
+        thread::sleep(Duration::from_millis(500))
     }
 
     let path = download_file(component_id).await?;
@@ -297,7 +304,6 @@ fn get_req(c: &Client, component_id: &str, range: Option<String>) -> RequestBuil
     let auth_str = general_purpose::STANDARD.encode(auth_str.as_bytes());
 
     let url = format!("https://chem.sshcrack.me/calculate/{}", component_id);
-    println!("Url to request: {}", url);
 
     let mut res = c
         .get(url)
