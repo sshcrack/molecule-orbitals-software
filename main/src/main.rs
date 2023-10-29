@@ -248,7 +248,7 @@ pub async fn run_generate() -> Result<(String, Box<Path>)> {
 
 async fn open_dialog() -> Result<Option<FileHandle>> {
     let res = AsyncFileDialog::new()
-        .add_filter("Molecule Orbitals", &["mout"])
+        .add_filter("Molecule Orbitals", &["out"])
         .set_title("Speicherort auswählen")
         .save_file()
         .await;
