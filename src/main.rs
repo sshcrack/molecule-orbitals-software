@@ -1,15 +1,17 @@
 use std::{
-    env::args,
+    env::{args, current_exe},
     io::{stdin, Cursor},
     path::{Path, PathBuf},
     thread,
-    time::Duration, str::FromStr,
+    time::Duration, str::FromStr, fs::write, process::exit,
 };
-use directories::ProjectDirs;
+use same_file::is_same_file;
+use directories::{ProjectDirs, UserDirs};
 
 
 use anyhow::{anyhow, bail, Result};
 use base64::{engine::general_purpose, Engine};
+use mslnk::ShellLink;
 use reqwest::{
     header::{AUTHORIZATION, RANGE},
     Client, RequestBuilder, StatusCode,
@@ -32,6 +34,9 @@ pub const LOGIN_PASSWORD: &str = "chemieisttollundso";
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    initalize_setup().await?;
+
+
     let dirs = ProjectDirs::from("me", "sshcrack", "molecule-orbitals").unwrap();
 
     env_logger::init();
@@ -44,7 +49,7 @@ async fn main() -> Result<()> {
     let avogadro_loc = app_dir.join("Avogadro");
     if only_open {
         let last = args.last().unwrap();
-        let maybe_file = PathBuf::from_str(last).ok().map(|e| e.into_boxed_path());
+        let maybe_file = PathBuf::from_str(last).ok().map(|e| e.into_boxed_path()).filter(|e| e.is_file());
 
         run_avogadro(&avogadro_loc, maybe_file.as_deref()).await?;
         return Ok(())
@@ -320,4 +325,53 @@ fn get_req(c: &Client, component_id: &str, range: Option<String>) -> RequestBuil
 #[derive(Debug, Clone, Component)]
 pub struct WrapperComponent {
     base: WebElement, // This is the outer <div>
+}
+
+
+pub async fn initalize_setup() -> Result<()> {
+    let user_dir = UserDirs::new().unwrap();
+
+    let avo_ico = include_bytes!("./ico/Avogadro.ico");
+    let g_ico = include_bytes!("./ico/generate.ico");
+
+    let dirs = ProjectDirs::from("me", "sshcrack", "molecule-orbitals").unwrap();
+    let d = dirs.data_local_dir();
+    let out_file = d.join("orbitals.exe");
+
+    let curr_exe = current_exe().unwrap();
+
+    if out_file.is_file() && is_same_file(&curr_exe, &out_file)? {
+        return Ok(())
+    }
+
+    if !d.exists() {
+        std::fs::create_dir_all(&d)?;
+    }
+
+    let avogadro_ico = d.join("Avogadro.ico");
+    let generate_ico = d.join("generate.ico");
+
+    let curr_bin = fs::read(&curr_exe).await?;
+
+    write(&avogadro_ico, avo_ico)?;
+    write(&generate_ico, g_ico)?;
+    write(&out_file, curr_bin)?;
+
+    let desktop = user_dir.desktop_dir().unwrap();
+    let calculate_lnk = desktop.join("Molekül-Orbitale berechnen.lnk");
+    let open_lnk = desktop.join("Molekül-Orbitale öffnen.lnk");
+
+    let mut sl = ShellLink::new(&out_file)?;
+    sl.set_icon_location(Some(generate_ico.to_str().unwrap().to_string()));
+    sl.create_lnk(&calculate_lnk)?;
+
+
+    let mut sl = ShellLink::new(&out_file)?;
+    sl.set_icon_location(Some(avogadro_ico.to_str().unwrap().to_string()));
+    sl.set_arguments(Some("--open-only".to_string()));
+
+    sl.create_lnk(&open_lnk)?;
+
+    Command::new(out_file).spawn().unwrap();
+    exit(0);
 }

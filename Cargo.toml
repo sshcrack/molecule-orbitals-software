@@ -1,5 +1,5 @@
 [package]
-name = "main"
+name = "molecule-orbitals"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,8 +11,10 @@ base64 = "0.21.5"
 directories = "5.0.1"
 env_logger = "0.10.0"
 log = "0.4.20"
+mslnk = "0.1.8"
 reqwest = "0.11.22"
 rfd = "0.12.1"
+same-file = "1.0.6"
 serde_json = "1.0.107"
 thirtyfour = "0.31.0"
 tokio = { version = "1.33.0", features = ["full"] }
